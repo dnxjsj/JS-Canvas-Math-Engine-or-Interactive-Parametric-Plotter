@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>정밀 계산기 & 매개변수 그래프</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background-color: #f0f2f5; margin: 20px; }
+        .calculator { display: inline-block; padding: 25px; border-radius: 20px; background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 450px; }
+        
+        #display { 
+            width: 100%; min-height: 80px; font-size: 20px; margin-bottom: 20px; 
+            text-align: left; padding: 15px; border: 2px solid #eee; border-radius: 12px; 
+            background: #fafafa; word-break: break-all; overflow-y: auto; box-sizing: border-box;
+            display: block; outline: none;
+        }
+
+        .buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+        button { padding: 15px 5px; font-size: 15px; cursor: pointer; border: none; border-radius: 10px; background: #e9ecef; transition: 0.2s; font-weight: 500; }
+        button:hover { background: #dee2e6; transform: translateY(-2px); }
+        
+        .equal { background: #ff9500; color: white; }
+        .clear { background: #ff3b30; color: white; }
+        .delete { background: #495057; color: white; }
+        .var-btn { background: #007bff; color: white; font-weight: bold; }
+        .var-btn:hover { background: #0056b3; }
+
+        canvas { border: 1px solid #333; background: #fff; cursor: grab; border-radius: 15px; margin-top: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .result { font-size: 20px; margin-top: 15px; font-weight: bold; color: #343a40; }
+    </style>
+</head>
+<body>
+    <h2>정밀 계산기 & 매개변수 그래프</h2>
+    <div class="calculator">
+        <div id="display" contenteditable="true" spellcheck="false">8*cos(t)-6*cos(8*t/3) | 8*sin(t)-6*sin(8*t/3)</div>
+        
+        <div class="buttons">
+            <button class="clear" onclick="clearDisplay()">C</button>
+            <button class="delete" onclick="deleteLast()">⌫</button>
+            <button onclick="appendValue('(')">(</button>
+            <button onclick="appendValue(')')">)</button>
+            <button onclick="appendValue('PI')">π</button>
+            <button onclick="appendValue('7')">7</button>
+            
+            <button onclick="appendValue('8')">8</button>
+            <button onclick="appendValue('9')">9</button>
+            <button onclick="appendValue('+')">+</button>
+            <button onclick="appendValue('-')">±</button>
+            <button onclick="appendValue('4')">4</button>
+            <button onclick="appendValue('5')">5</button>
+            
+            <button onclick="appendValue('6')">6</button>
+            <button onclick="appendValue('-')">-</button>
+            <button onclick="appendValue('sqrt(')">√</button>
+            <button onclick="appendValue('1')">1</button>
+            <button onclick="appendValue('2')">2</button>
+            <button onclick="appendValue('3')">3</button>
+            
+            <button onclick="appendValue('*')">*</button>
+            <button onclick="appendValue('pow(')" style="background:#d4edda;">^</button>
+            <button onclick="appendValue('0')">0</button>
+            <button onclick="appendValue('/')">/</button>
+            <button class="equal" onclick="calculate()">=</button>
+            <button onclick="appendValue('sin(')">sin</button>
+            
+            <button onclick="appendValue('cos(')">cos</button>
+            <button onclick="appendValue('tan(')">tan</button>
+            <button onclick="appendValue('atan(')">atan</button>
+            <button onclick="appendValue('acos(')">acos</button>
+            <button onclick="appendValue('asin(')">asin</button>
+            <button onclick="appendValue('log(')">log</button>
+            
+            <button onclick="drawGraph(getDisplayText())" style="background:#fff3cd;">📈</button>
+            <button onclick="appendValue('.')">.</button>
+            <button class="var-btn" onclick="appendValue('x')">x</button>
+            <button class="var-btn" onclick="appendValue('t')">t</button>
+            <button class="var-btn" onclick="appendValue(' | ')">|</button>
+            <button onclick="appendValue(',')">,</button>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="graphCanvas" width="700" height="700"></canvas>
+        <div class="result" id="resultValue">결과값: </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("graphCanvas");
+        const ctx = canvas.getContext("2d");
+        const display = document.getElementById("display");
+        let offsetX = canvas.width / 2, offsetY = canvas.height / 2;
+        let isDragging = false, lastMouseX, lastMouseY, scale = 25, range = 50;
+
+        const mathScope = {
+            sin: Math.sin, cos: Math.cos, tan: Math.tan,
+            asin: Math.asin, acos: Math.acos, atan: Math.atan,
+            sqrt: Math.sqrt, pow: Math.pow, log: Math.log, exp: Math.exp,
+            PI: Math.PI, E: Math.E
+        };
+
+        function appendValue(v) { 
+            display.focus();
+            document.execCommand('insertText', false, v);
+        }
+        function clearDisplay() { display.innerText = ''; document.getElementById('resultValue').innerText = "결과값: "; }
+        function deleteLast() { display.innerText = display.innerText.slice(0, -1); }
+        function getDisplayText() { return display.innerText.replace(/\n/g, ""); } // 줄바꿈 문자 제거
+
+        function calculate() {
+            try {
+                let expr = getDisplayText();
+                if (!expr.includes('x') && !expr.includes('t')) {
+                    const res = new Function(...Object.keys(mathScope), "return " + expr)(...Object.values(mathScope));
+                    document.getElementById('resultValue').innerText = "결과값: " + res;
+                }
+                drawGraph(expr);
+            } catch (e) { alert('수식 오류: ' + e.message); }
+        }
+
+        function drawGraph(expression) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 1;
+
+            for (let i = -range; i <= range; i++) {
+                ctx.strokeStyle = (i === 0) ? "#333" : "#eee";
+                ctx.beginPath();
+                ctx.moveTo(offsetX + i * scale, 0); ctx.lineTo(offsetX + i * scale, canvas.height);
+                ctx.moveTo(0, offsetY + i * scale); ctx.lineTo(canvas.width, offsetY + i * scale);
+                ctx.stroke();
+                if (i !== 0 && i % 5 === 0) {
+                    ctx.fillStyle = "#888"; ctx.font = "10px Arial";
+                    ctx.fillText(i, offsetX + i * scale + 2, offsetY - 5);
+                    ctx.fillText(-i, offsetX + 5, offsetY + i * scale - 2);
+                }
+            }
+
+            if (!expression || expression.trim() === "") return;
+            ctx.strokeStyle = "magenta"; ctx.lineWidth = 2.5; ctx.beginPath();
+            const keys = Object.keys(mathScope), values = Object.values(mathScope);
+
+            if (expression.includes('|')) {
+                // 공백 유무와 상관없이 잘라내고 trim 처리
+                let parts = expression.split('|');
+                let exprX = parts[0].trim();
+                let exprY = parts[1] ? parts[1].trim() : exprX;
+                
+                let first = true;
+                for (let t = 0; t <= Math.PI * 12; t += 0.01) {
+                    try {
+                        const xVal = new Function("t", ...keys, "return " + exprX)(t, ...values);
+                        const yVal = new Function("t", ...keys, "return " + exprY)(t, ...values);
+                        if (first) { ctx.moveTo(offsetX + xVal * scale, offsetY - yVal * scale); first = false; }
+                        else { ctx.lineTo(offsetX + xVal * scale, offsetY - yVal * scale); }
+                    } catch (e) {}
+                }
+            } else {
+                let first = true;
+                for (let x = -range; x <= range; x += 0.05) {
+                    try {
+                        const yVal = new Function("x", ...keys, "return " + expression)(x, ...values);
+                        if (first) { ctx.moveTo(offsetX + x * scale, offsetY - yVal * scale); first = false; }
+                        else { ctx.lineTo(offsetX + x * scale, offsetY - yVal * scale); }
+                    } catch (e) {}
+                }
+            }
+            ctx.stroke();
+        }
+
+        canvas.addEventListener("mousedown", (e) => { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; canvas.style.cursor = "grabbing"; });
+        window.addEventListener("mousemove", (e) => {
+            if (isDragging) {
+                offsetX += e.clientX - lastMouseX; offsetY += e.clientY - lastMouseY;
+                lastMouseX = e.clientX; lastMouseY = e.clientY;
+                drawGraph(getDisplayText());
+            }
+        });
+        window.addEventListener("mouseup", () => isDragging = false);
+        canvas.addEventListener("wheel", (e) => { e.preventDefault(); scale *= (e.deltaY < 0 ? 1.1 : 0.9); drawGraph(getDisplayText()); });
+        
+        drawGraph(getDisplayText());
+    </script>
+</body>
+</html>
