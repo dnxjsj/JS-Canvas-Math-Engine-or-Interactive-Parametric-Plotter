@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>만능 계산기 & 드래그 가능한 그래프</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background-color: #f0f2f5; margin: 20px; }
+        .calculator { display: inline-block; padding: 25px; border-radius: 20px; background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 450px; }
+        #display { 
+            width: 100%; min-height: 80px; font-size: 20px; margin-bottom: 20px; 
+            text-align: left; padding: 15px; border: 2px solid #eee; border-radius: 12px; 
+            background: #fafafa; word-break: break-all; overflow-y: auto; box-sizing: border-box;
+            display: block; outline: none;
+        }
+        .buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+        button { padding: 15px 5px; font-size: 15px; cursor: pointer; border: none; border-radius: 10px; background: #e9ecef; transition: 0.2s; font-weight: 500; }
+        button:hover { background: #dee2e6; transform: translateY(-2px); }
+        .equal { background: #ff9500; color: white; }
+        .clear { background: #ff3b30; color: white; }
+        .delete { background: #495057; color: white; }
+        .var-btn { background: #007bff; color: white; font-weight: bold; }
+        .var-btn:hover { background: #0056b3; }
+        
+        /* r 슬라이더 스타일 (기본 숨김) */
+        #rControlArea { 
+            margin-top: 15px; padding: 10px; background: #f8f9fa; 
+            border-radius: 10px; display: none; align-items: center; 
+            justify-content: space-between; gap: 10px; 
+        }
+        #rSlider { flex-grow: 1; cursor: pointer; }
+        #rValueDisplay { font-weight: bold; color: #007bff; min-width: 30px; }
+
+        canvas { border: 1px solid #333; background: #fff; cursor: grab; border-radius: 15px; margin-top: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .result { font-size: 20px; margin-top: 15px; font-weight: bold; color: #343a40; }
+    </style>
+</head>
+<body>
+    <h2>만능 계산기 & 드래그 가능한 그래프</h2>
+    <div class="calculator">
+        <div id="display" contenteditable="true" spellcheck="false" oninput="toggleRSlider()">y = r * sin(x)</div>
+        <div class="buttons">
+            <button class="clear" onclick="clearDisplay()">C</button>
+            <button class="delete" onclick="deleteLast()">⌫</button>
+            <button onclick="appendValue('(')">(</button>
+            <button onclick="appendValue(')')">)</button>
+            <button onclick="appendValue('PI')">π</button>
+            <button onclick="appendValue('7')">7</button>
+            <button onclick="appendValue('8')">8</button>
+            <button onclick="appendValue('9')">9</button>
+            <button onclick="appendValue('+')">+</button>
+            <button onclick="appendValue('-')">±</button>
+            <button onclick="appendValue('4')">4</button>
+            <button onclick="appendValue('5')">5</button>
+            <button onclick="appendValue('6')">6</button>
+            <button onclick="appendValue('-')">-</button>
+            <button onclick="appendValue('sqrt(')">√</button>
+            <button onclick="appendValue('1')">1</button>
+            <button onclick="appendValue('2')">2</button>
+            <button onclick="appendValue('3')">3</button>
+            <button onclick="appendValue('*')">*</button>
+            <button onclick="appendValue('pow(')" style="background:#d4edda;">^</button>
+            <button onclick="appendValue('0')">0</button>
+            <button onclick="appendValue('/')">/</button>
+            <button class="equal" onclick="calculate()">=</button>
+            <button onclick="appendValue('sin(')">sin</button>
+            <button onclick="appendValue('cos(')">cos</button>
+            <button onclick="appendValue('tan(')">tan</button>
+            <button onclick="appendValue('atan(')">atan</button>
+            <button onclick="appendValue('acos(')">acos</button>
+            <button onclick="appendValue('asin(')">asin</button>
+            <button onclick="appendValue('log(')">log</button>
+            <button onclick="appendValue('exp(')" style="background:#e2e3ff;">exp</button>
+            <button onclick="drawGraph(getDisplayText())" style="background:#fff3cd;">📈</button>
+            <button onclick="appendValue('.')">.</button>
+            <button class="var-btn" onclick="appendValue('x')">x</button>
+            <button class="var-btn" onclick="appendValue('y')">y</button> 
+            <button class="var-btn" onclick="appendValue('t')">t</button>
+            <button class="var-btn" onclick="appendValue('r')">r</button>
+            <button class="var-btn" onclick="appendValue(' | ')">|</button>
+            <button onclick="appendValue('=')">=</button>
+        </div>
+
+        <div id="rControlArea">
+            <span>상수 r:</span>
+            <input type="range" id="rSlider" min="0" max="50" step="0.1" value="5" oninput="updateRValue(this.value)">
+            <span id="rValueDisplay">5</span>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="graphCanvas" width="700" height="700"></canvas>
+        <div class="result" id="resultValue">결과값: </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("graphCanvas");
+        const ctx = canvas.getContext("2d");
+        const display = document.getElementById("display");
+        const rControlArea = document.getElementById("rControlArea");
+        const rValueDisplay = document.getElementById("rValueDisplay");
+        let offsetX = canvas.width / 2, offsetY = canvas.height / 2;
+        let isDragging = false, lastMouseX, lastMouseY, scale = 50, range = 500;
+        let constantR = 5;
+
+        const mathScope = { 
+            sin: Math.sin, cos: Math.cos, tan: Math.tan, 
+            asin: Math.asin, acos: Math.acos, atan: Math.atan, 
+            sqrt: Math.sqrt, pow: Math.pow, log: Math.log, 
+            exp: Math.exp, PI: Math.PI, E: Math.E 
+        };
+
+        // r 글자 포함 여부에 따라 슬라이더 표시/숨김
+        function toggleRSlider() {
+            const text = getDisplayText();
+            if (text.includes('r')) {
+                rControlArea.style.display = "flex";
+            } else {
+                rControlArea.style.display = "none";
+            }
+        }
+
+        function updateRValue(val) {
+            constantR = parseFloat(val);
+            rValueDisplay.innerText = val;
+            drawGraph(getDisplayText());
+        }
+
+        function appendValue(v) { 
+            display.focus(); 
+            document.execCommand('insertText', false, v); 
+            toggleRSlider(); // 버튼 클릭으로 입력 시에도 체크
+        }
+
+        function clearDisplay() { 
+            display.innerText = ''; 
+            document.getElementById('resultValue').innerText = "결과값: "; 
+            toggleRSlider();
+        }
+
+        function deleteLast() { 
+            display.innerText = display.innerText.slice(0, -1); 
+            toggleRSlider();
+        }
+
+        function getDisplayText() { return display.innerText.replace(/\n/g, ""); }
+
+        function calculate() {
+            try {
+                let expr = getDisplayText();
+                if (!expr.includes('x') && !expr.includes('t') && !expr.includes('y') && !expr.includes('r')) {
+                    const res = new Function(...Object.keys(mathScope), "return " + expr)(...Object.values(mathScope));
+                    document.getElementById('resultValue').innerText = "결과값: " + res;
+                }
+                drawGraph(expr);
+            } catch (e) { console.log(e); }
+        }
+
+        function drawGraph(expression) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 1;
+
+            for (let i = -range; i <= range; i++) {
+                ctx.strokeStyle = (i === 0) ? "#333" : "#eee";
+                ctx.beginPath();
+                ctx.moveTo(offsetX + i * scale, 0); ctx.lineTo(offsetX + i * scale, canvas.height);
+                ctx.moveTo(0, offsetY + i * scale); ctx.lineTo(canvas.width, offsetY + i * scale);
+                ctx.stroke();
+                if (i !== 0 && i % 5 === 0) {
+                    ctx.fillStyle = "#888"; ctx.font = "10px Arial";
+                    ctx.fillText(i, offsetX + i * scale + 2, offsetY - 5);
+                    ctx.fillText(-i, offsetX + 5, offsetY + i * scale - 2);
+                }
+            }
+
+            if (!expression || expression.trim() === "") return;
+            const keys = [...Object.keys(mathScope), "r"];
+            const values = [...Object.values(mathScope), constantR];
+
+            if (expression.includes('|')) {
+                let parts = expression.split('|');
+                let exprX = parts[0].trim(), exprY = parts[1] ? parts[1].trim() : exprX;
+                ctx.strokeStyle = "magenta"; ctx.lineWidth = 2.5; ctx.beginPath();
+                for (let t = 0; t <= Math.PI * 12; t += 0.01) {
+                    const xVal = new Function("t", ...keys, "return " + exprX)(t, ...values);
+                    const yVal = new Function("t", ...keys, "return " + exprY)(t, ...values);
+                    if (t === 0) ctx.moveTo(offsetX + xVal * scale, offsetY - yVal * scale);
+                    else ctx.lineTo(offsetX + xVal * scale, offsetY - yVal * scale);
+                }
+                ctx.stroke();
+            } 
+            else if (expression.includes('=') && !expression.trim().startsWith('y=')) {
+                let parts = expression.split('=');
+                let implicitExpr = `(${parts[0].trim()}) - (${parts[1].trim()})`;
+                const res = 2; ctx.strokeStyle = "magenta"; ctx.lineWidth = 2;
+                const f = (vx, vy) => {
+                    try { return new Function("x", "y", ...keys, "return " + implicitExpr)(vx, vy, ...values); }
+                    catch (e) { return 0; }
+                };
+                for (let px = 0; px < canvas.width; px += res) {
+                    for (let py = 0; py < canvas.height; py += res) {
+                        const x0 = (px - offsetX) / scale, y0 = (offsetY - py) / scale;
+                        const x1 = (px + res - offsetX) / scale, y1 = (offsetY - (py + res)) / scale;
+                        const v1 = f(x0, y0), v2 = f(x1, y0), v3 = f(x1, y1), v4 = f(x0, y1);
+                        let code = 0; if (v1 > 0) code |= 8; if (v2 > 0) code |= 4; if (v3 > 0) code |= 2; if (v4 > 0) code |= 1;
+                        if (code === 0 || code === 15) continue;
+                        const getI = (a, b, p1, p2) => p1 + (Math.abs(a) / (Math.abs(a) + Math.abs(b))) * (p2 - p1);
+                        ctx.beginPath();
+                        const t = getI(v1, v2, px, px + res), b = getI(v4, v3, px, px + res), l = getI(v1, v4, py, py + res), r = getI(v2, v3, py, py + res);
+                        if (code === 1 || code === 14) { ctx.moveTo(px, l); ctx.lineTo(b, py + res); }
+                        else if (code === 2 || code === 13) { ctx.moveTo(px + res, r); ctx.lineTo(b, py + res); }
+                        else if (code === 3 || code === 12) { ctx.moveTo(px, l); ctx.lineTo(px + res, r); }
+                        else if (code === 4 || code === 11) { ctx.moveTo(px + res, r); ctx.lineTo(t, py); }
+                        else if (code === 6 || code === 9) { ctx.moveTo(t, py); ctx.lineTo(b, py + res); }
+                        else if (code === 7 || code === 8) { ctx.moveTo(px, l); ctx.lineTo(t, py); }
+                        ctx.stroke();
+                    }
+                }
+            } 
+            else {
+                let cleanExpr = expression;
+                if (expression.includes('=')) cleanExpr = expression.split('=')[1].trim();
+                ctx.strokeStyle = "magenta"; ctx.lineWidth = 2.5; ctx.beginPath();
+                let first = true;
+                for (let x = -range / scale; x <= range / scale; x += 0.02) {
+                    try {
+                        const yVal = new Function("x", ...keys, "return " + cleanExpr)(x, ...values);
+                        const plotX = offsetX + x * scale;
+                        const plotY = offsetY - yVal * scale;
+                        if (first) { ctx.moveTo(plotX, plotY); first = false; } 
+                        else { ctx.lineTo(plotX, plotY); }
+                    } catch (e) {}
+                }
+                ctx.stroke();
+            }
+        }
+
+        canvas.addEventListener("mousedown", (e) => { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; canvas.style.cursor = "grabbing"; });
+        window.addEventListener("mousemove", (e) => {
+            if (isDragging) {
+                offsetX += e.clientX - lastMouseX; offsetY += e.clientY - lastMouseY;
+                lastMouseX = e.clientX; lastMouseY = e.clientY;
+                drawGraph(getDisplayText());
+            }
+        });
+        window.addEventListener("mouseup", () => { isDragging = false; canvas.style.cursor = "grab"; });
+        canvas.addEventListener("wheel", (e) => { e.preventDefault(); scale *= (e.deltaY < 0 ? 1.1 : 0.9); drawGraph(getDisplayText()); });
+
+        // 초기 상태 체크
+        toggleRSlider();
+        drawGraph(getDisplayText());
+    </script>
+</body>
+</html>
